@@ -1,5 +1,5 @@
 ---
-title: "Applying a linear regression to understand what makes coffee good"
+title: "What is an indicator of high quality coffee?"
 author: "Adam Hyman, Anstonia Ma, Emily Huang"
 date: "April 11, 2022"
 output:
