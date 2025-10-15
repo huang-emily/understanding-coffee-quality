@@ -1,0 +1,300 @@
+---
+title: "What is an indicator of high quality coffee?"
+author: "Adam Hyman, Anstonia Ma, Emily Huang"
+date: "April 11, 2022"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r load packages, include=FALSE}
+# install.packages("tidytuesdayR")
+# install.packages("corrplot")
+library(corrplot)
+library(tidyverse)
+library(patchwork)
+library(stargazer)
+library(sandwich)
+library(lmtest)
+library(dplyr)
+library(ggplot2)
+library(car)
+```
+```{r get data, include= FALSE}
+# Get the Data
+# Read in with tidytuesdayR package
+# Install from CRAN via: install.packages("tidytuesdayR")
+# This loads the readme and all the datasets for the week of interest
+# Either ISO-8601 date or year/week works!
+# tuesdata <- tidytuesdayR::tt_load('2020-07-07')
+# tuesdata <- tidytuesdayR::tt_load(2020, week = 28)
+# 
+# coffee_ratings <- tuesdata$filtered_data
+# coffee_ratings
+coffee_ratings <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-07/coffee_ratings.csv')
+```
+
+```{r clean data, include=FALSE}
+#  Get rid of 1 row which has a total_cup_points of 0.  This is an error.
+#  The next lowest total_cup_points is 59.83.
+coffee_ratings <- coffee_ratings[coffee_ratings$total_cup_points != 0,]
+#  Clean the harvest_year
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "08/09 crop"] <- "2009"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "1t/2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "1T/2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2009 - 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2009 / 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2009/2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2009-2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2010-2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2011/2012"] <- "2012"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2013/2014"] <- "2014"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2014/2015"] <- "2015"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2015/2016"] <- "2016"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2016 / 2017"] <- "2017"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2016/2017"] <- "2017"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "2017 / 2018"] <- "2018"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "3T/2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "47/2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "4T/10"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "4T/2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "4t/2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "4t/2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "4T72010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Abril - Julio"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Abril - Julio /2011"] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "August to December"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "December 2009-March 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Fall 2009"] <- "2009"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "January Through April"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "May-August"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Mayo a Julio"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "mmm"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Sept 2009 - April 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "Spring 2011 in Colombia."] <- "2011"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "TEST"] <- NA
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "March 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "23 July 2010"] <- "2010"
+coffee_ratings["harvest_year"][coffee_ratings["harvest_year"] == "January 2011"] <- "2011"
+coffee_ratings["certification_body"][coffee_ratings["certification_body"] == "Specialty Coffee Association of Costa Rica"] <- "Specialty Coffee Association"
+coffee_ratings["certification_body"][coffee_ratings["certification_body"] == "Specialty Coffee Association of Indonesia"] <- "Specialty Coffee Association"
+#  Created havest_year_num which is numeric
+coffee_ratings$harvest_year_num <- as.numeric(as.character(coffee_ratings$harvest_year))
+#  Removes new line character in Certification Body
+coffee_ratings$certification_body <- sapply(coffee_ratings$certification_body,
+  function(x) { gsub("[\r\n]", "", x) })
+```
+
+
+```{r filtered data, include= FALSE}
+filtered_coffee = coffee_ratings[coffee_ratings$species == 'Arabica',]
+filtered_countries = filtered_coffee[!(filtered_coffee$country_of_origin %in% c('Cote d?Ivoire', 'United States (Puerto Rico)', 'United States (Hawaii)', 'United States')),]
+filtered_numbags = filtered_countries[filtered_countries$number_of_bags >= 10.00,]
+filtered_alt = filtered_numbags[filtered_numbags$altitude_mean_meters <=10000,]
+filtered_data <- filtered_alt %>%
+  filter(!is.na(filtered_alt$harvest_year) & !is.na(filtered_alt$grading_date) & !is.na(filtered_alt$altitude_mean_meters) & !is.na(filtered_alt$certification_body) & !is.na(filtered_alt$country_of_origin) & !is.na(filtered_alt$processing_method))
+filtered_data$certification_body <- sapply(filtered_data$certification_body,function(x) { gsub("[\r\n]", "", x) })
+filtered_data <- filtered_data[filtered_data$total_cup_points>=70,]
+```
+
+
+
+```{r model building, include= FALSE}
+# version that we're going with 
+first = lm(total_cup_points ~ flavor, data = filtered_data)
+second = lm(total_cup_points ~ flavor + 
+                             country_of_origin + #control
+                             certification_body + #control
+                             altitude_mean_meters, #control
+                             data = filtered_data)
+third = lm(total_cup_points ~ flavor + 
+             country_of_origin + #control
+             certification_body + #control
+             altitude_mean_meters + #control
+             harvest_year + #interaction
+             processing_method + #interaction
+             aroma + #interaction
+             acidity + #interaction
+             body + #interaction
+             balance + #interaction 
+             sweetness +
+             aftertaste, #interaction
+           data = filtered_data)
+```
+\newpage
+# Introduction
+
+> Starbucks is one of the most recognizable brands of coffee in the world, but recent surveys conducted by leadership has shown a negative attitude towards the quality of our drinks; one of the most notable criticisms was “that the coffee tastes bad. The processes used are seen as clearly inferior to anyone who knows the first thing about coffee. Or anyone who has tried a straight espresso from one of their branches. But at the same time it is an incredibly successful franchise” from this [source](https://making-nice-coffee.com/why-starbucks-is-bad/). Because of these criticisms, as part of the Starbucks Data Science team, we’ve been tasked to see whether or not taste is a strong indication of good quality coffee. We want to learn if our coffee beans is the reason for causing poor feedback on the coffee quality in hopes of changing public sentiment of our products. To be clear, our research question for this analysis is “Is coffee flavor a significant indicator of coffee quality?” with our null hypothesis being “flavor has no significant effect on coffee ‘quality’”.
+
+# Data and Research Design and Model Building Process
+
+> In order to better understand what traits of a coffee bean indicate good quality, we’ll be using data collected from the Coffee Quality Institute’s review pages in January 2018 where all of the coffee are rated by certified coffee drinkers, which contains 1339 observations of different coffees and their attributes like aroma, flavor, body, altitude, uniformity, country of origin, and etc. 
+> Because Starbucks coffee beans are only of the Arabic species and from Latin America, Africa, and Asia-Pacific regions, we want to filter our data to best fit these sourcing conditions. We also want to ensure that the panelists tested a large batch of coffee rather than a small subset to ensure the scoring was based on a good sample of coffee beans, which meant we filtered out coffee bean observations that had less than 10 bags included in the judging. 
+
+```{r make accounting table, echo=FALSE}
+# insert accounting table
+cause <- c('Start', 'Arabica species coffee', 'Coffees with relevant countries of origin for Starbucks', 'Coffees with sample bags >= 10','Coffee with reasonable altitude mean meters', 'Coffees with valid values for our outcome, treatment, and predictor variables','Coffee with greater than 70 “total cup points”')
+samples_available <- c('1339', '1311', '1225', '1079', '1075','886','879')
+samples_filtered <- c('', '28', '86', '146', '4', '189', '7')
+act_table <- data.frame(cause, samples_available, samples_filtered)
+knitr::kable(act_table,
+             col.names = c("Cause",
+                           "Number of samples available for analysis (after removal for cause)",
+                           "Remove number of samples for cause"))
+```
+
+
+> We additionally did some data cleanup by filtering the “harvest year” to be purely the year since there were varying formats in the column such as a specific date, a time period with only months, and other variations. Because we were only interested in just the year, we filtered out any observations that did not have the year in the field at all and modified the rest of the fields to only have the year. Next, we filtered for our control variable “certification body” such that all subsidiaries of “Specialty Coffee Association” were under the same body. Lastly, we filtered out mean altitudes where the value was greater than 10,000 since it didn’t make sense logically for coffee beans to be grown at such a high altitude (for context, Mount Everest is 8,894 meters above sea level). 
+> We’ll be creating 3 separate models to achieve separate goals for our analysis. The first model will include just our key treatment and outcome variables. The second model will include all variables from the first model in addition to three control variables in order to ensure that the control variables do not absorb the causal effect of flavor. The third model includes all variables from the second model with the addition of variables that we believe directly impact flavor to lessen omitted variable bias from the second model as these variables can have a direct impact on flavor and “total cup points.” 
+
+> We identified our response variable to be “total cup points” which is the grader’s “holistically integrated rating of the sample as perceived by the individual panelist” (and therefore a metric value as graders have extensive training to be accurate by the decimal) to help define coffee quality. Our treatment variable is the coffee “flavor” which is also a score determined by the Coffee Quality Institute graders and is a metric variable. We also identified “country of origin”, “certification body”, and “altitude mean meters” to be our control variables to ensure those variables were accounted for when testing how much “flavor” affected the “total cup points”. 
+> For our control variables, there are 25 countries (“country of origin”), 19 certification bodies (“certification body”), and the “altitude mean meters” which is the average height where the coffee is grown. While we decided to use these as control variables to ensure that flavor was a significant variable regardless of bean origin and grading body, there could be some problems with the control variables we chose. For instance, certain countries and certification bodies are over indexed in our sample and that certification bodies have a relationship with the country of origin because of the location of said certification body. However, we believe that there are enough graders within each respective certification body to be independent and our country sample to be robust enough to overcome these problems. 
+> We did not feel a need to transform the variables because the metric variables that we put into our model were approximately normal and our other variables (such as certification body) were categorical in nature.  
+
+```{r fig.height=2, fig.width=6, echo=FALSE}
+par(mar=c(1,3,5,4))
+par(oma=c(1,1,1,1))
+par(mfrow = c(1,3))
+hist(filtered_data$total_cup_points, main="Total Cup Points")
+hist(filtered_data$flavor, main="Flavor")
+hist(filtered_data$altitude_mean_meters, main="Altitude Mean Meters")
+```
+
+> Our first model is with our response variable (“total cup points”) and treatment (“flavor”). The second model will include the variables in our first model with the addition of three control variables (“country of origin”, “certification body”, and “altitude mean meters”).
+
+```{r correlation matrix EDA, echo=FALSE}
+num_vars = filtered_data[c("total_cup_points", "flavor", "aroma", "acidity",
+                           "body", "balance", "sweetness", "aftertaste")]
+third.cor = cor(num_vars, method = c("spearman"))
+corrplot(third.cor, method = 'number', tl.col = 'black', number.cex=0.75)
+```
+
+> The third model’s additional variables were chosen from the above correlation matrix where we saw that “aroma”, “acidity”, “body”, “balance”, and “aftertaste” are correlated with “flavor” and “total cup points.” While the correlation matrix above does not show as heavy correlation as “body” or “acidity”, we also included “sweetness” as “sweetness” directly impacts the flavor of the coffee. However, we did not include “clean cup” or “uniformity” because of their weak correlation in our matrix, their widely skewed data that we were unable to normalize with transformations, and also weak practical significance to “total cup points” and “flavor”. We also chose to include “harvest year” as an additional variable as we believe it would be important to include it as the year that the coffee is grown (even though the coffee is graded within a year of harvest) could have an effect as well but not as a control variable in our second model. If flavor is consistently statistically significant throughout all three of these models, then we can confidently conclude that flavor does have a significant effect on “total cup points” which in turn means that flavor is a significant indicator of coffee quality as we are using “total cup points” as a measure of coffee quality.
+
+> To verify that these models are different and also perform differently from each other, we will be performing 2 anova tests to verify that the variables we added to each are statistically significant.
+
+```{r wald test, echo=FALSE}
+# waldtest(first, second, third)
+anova(first, second, test = "F")
+anova(second, third, test = "F")
+```
+
+> As we see above, all of our anova tests all lead us to reject the null hypothesis and assume that the variables we used are statistically significant. While we have shown that they are significantly different, we also want to verify that the performance of these models are also different. To do this, we will be calculating the mean squared error for all of our models and comparing how each of our models stack up against each other. 
+
+```{r define a function to compute MSR, include=FALSE} 
+calculate_msr <- function(model) { 
+  # This function takes a model, and uses the `resid` function 
+  # together with the definition of the msr to produce 
+  # the MEAN of the squared residuals
+  msr <- mean(resid(model)^2)
+  return(msr)
+} 
+```
+
+```{r calculate msr, echo=FALSE}
+model_1_msr <- calculate_msr(first)
+model_2_msr <- calculate_msr(second)
+model_3_msr <- calculate_msr(third)
+print(paste("Model 1 MSR:", model_1_msr))
+print(paste("Model 2 MSR:", model_2_msr))
+print(paste("Model 3 MSR:", model_3_msr))
+```
+
+> With each progressive model, our MSR improves with our greatest improvement being from our second to our third model. This aligns with the goal of our third model since we included all the variables that we believed would have an impact on “flavor” and “total cup points” so their inclusion should also help our model’s predictive power.
+
+# Results
+
+```{r stargazer all,echo=FALSE}  
+ stargazer(
+   first,
+   second,
+   third,
+   omit = c('certification_body.', 'country_of_origin.', 'altitude_mean_meters', 'processing_method.', 'harvest_year.'),
+   column.labels = c('first', 'second', 'third'),
+   type = 'text',
+   header = FALSE,
+   report = 'vsc*',
+   star.cutoffs = c(0.05, 0.01, 0.001)
+   )
+
+```
+
+> Stargazer shows that the r-squared improves as more variables are added to the model, when we move from the first model to the second, as well as from the second to the third.  As can be seen in the chart above, all numeric explanatory variables have p-values below 0.01, which shows they are very significant.  Categorical variables, such as country of origin, were also also statistically significant, but were omitted from the chart for readability.
+
+> With the results of the test, we’ve discovered that flavor is such a strong indicator of coffee quality that it explains 72% of the variation of total cup points.  This means that we need to heavily consider customer feedback regarding the coffee taste; if coffee taste is as bad as customers are saying in recent surveys, we need to investigate what has affected the coffee beans to have caused poor quality coffee. There are other factors that we need to consider regarding customer feedback such as the types of drinks customers complain about poor taste. If customers are complaining about drinks that aren’t purely just coffee, there may be additional surveying and data analysis we need to consider before making a definitive statement about what is causing the poor taste in our coffee. More details about what we should gather for data will be detailed in the “Structural Limitations of the Models” section. At the very least, we know our customers are giving an indication of our products’ quality that requires high attention in fixing as soon as possible.
+
+# Limitations of the Models
+
+## Statistical Limitations of the Models 
+
+> The large sample assumptions to be evaluated are:
+
+> 1. **Independent and Identically Distributed (I.I.D.) Data:**
+
+> Our initial dataset contains all coffees featured in the Coffee Quality Institute’s review pages in January 2018.  The featured coffees are those selected by experts that are of interest to serious coffee drinkers. The experts intentionally selected a variety of coffees, based on characteristics like uniformity, body, aroma, flavor, etc to ensure that a wide range of coffees were featured, which mitigates our concerns about the dataset. Coffee submitted for grading is from all over the world so that the data won't be skewed toward just one region and graders have a standardized approach to analyzing the coffee and rating it equally regardless of origin. 
+We were careful that the records that we chose to exclude did not cause this assumption to be violated.
+
+> 2. **A Unique BLP Exists:**
+
+>We verified that a unique BLP exists by ensuring that there is no perfect collinearity.
+>We tested for collinearity using a correlation matrix above in the Model Building Portion.
+
+>As none of our variables had a coefficient of 1.0 besides when they were compared to themselves, our correlation matrix does not show perfect collinearity between any of our predictors.
+
+> 3. **Linear Conditional Expectation:**
+
+> We validated that there is a linear relationship between predictors and the target variable by looking at the residuals and checking whether they are consistent for various inputs.
+
+> We see that this is the case below for all three of our models, where the residuals are equally dispersed for different fitted values. This satisfies the assumption of linear conditional expectation.
+
+```{r fig.height=3, fig.width=6, echo = FALSE}
+plot(first, which = 1, main = 'Model 1')
+plot(second, which = 1, main = 'Model 2')
+plot(third, which = 1, main = 'Model 3')
+```
+
+> 4. **Homoskedastic Errors:**
+
+> We are checking if the square root of the residuals are equal across the regression line.  For our first model, the line is roughly horizontal across the graph so we believe this satisfies the assumption of homoskedastic errors. However, we do see for our second and third models that our residuals show a steep decline from the left side of the chart to the middle where our points are congregated. What this would mean is that for coffees that are ranked lower than the average, there is more variation in our reesults. Once the coffee rating (total cup points) increases as we move to the right of the graph, the line becomes much more horizontal to showcase equal variance of our residuals. Following this reasoning, while the line is not the ideal horizontal that we would prefer for our models, because the skew on the left can be explained by the lower amount of "bad" coffee which can vary in terms of why the coffee quality was poor while "good" coffee tends to share similar traits and are more consistent. Hence, we say that all of our models satisfy this assumption. 
+
+```{r fig.height=3, fig.width=6, echo=FALSE, warning = FALSE}
+plot(first, which = 3, main = 'Model 1')
+plot(second, which = 3,  main = 'Model 2')
+plot(third, which = 3,  main = 'Model 3')
+```
+
+> 5. **Normally Distributed Errors:**
+
+> We used Q-Q plotd to check that variables are multivariate normal.  The Q-Q plots below show that the data is very close to normal, however it has slightly fatter tails, which is why the Q-Q plots are slightly below the line on the far left and slightly above on the far right.  However, it's close enough that we consider that this satisfies the assumption of Normally Distributed Errors.
+
+```{r fig.height=3, fig.width=6, echo=FALSE, warning=FALSE}
+plot(first, which = 2,  main = 'Model 1')
+plot(second, which = 2,  main = 'Model 2')
+plot(third, which = 2,  main = 'Model 3')
+```
+
+## Structural Limitations of your Model
+
+> "Uniformity" and "clean cup" were omitted because they had a low correlation with "total cup points".  They could have had an effect on our final model.
+
+> We think that "uniformity" and "clean cup" would have been positively correlated with "flavor" (a predictor) and "total cup points" (the response variable).  Because those correlations are both positive and the correlation coefficient of "flavor" is also positive, the omission results in positive omitted variable bias which increases the coefficient of "flavor", pushing it further away from zero.
+
+> A further limitation of our model is omitted variables which impact the final product that is consumed by the consumer like machie that is used to grind the coffee (categorical variable). There are different type of machines (hypothetically split into "good quality" and "bad quality" machines) which will have different effects on both flavor and "total cup points." We posit that a good quality machine will have a positive correlation with flavor and also a positive correlation with "total cup points." This will lead us to a positive omitted variable bias and increase the statistical significance of "flavor." However, inversely, a poor quality machine will have a negative correlation with flavor and also a negative correlation with "total cup points" which will still result in a positive omitted variable bias. 
+
+> Omission of these variables does not call into question the core results, but should lead to further study as coffee is not always drunk by itself, but is combined with other additives like sugar, milk, etc. 
+
+
+
+# Conclusion
+
+> The results of our analysis found that the taste of a coffee is actually a strong indicator of coffee quality which means our customers may be indicating something significant about our products. From the previous sections, we know there is more additional data collecting and analysis that needs to be done in order to pinpoint what is making customers have negative sentiment towards our products.
+
+> We should work with Quality Control to see if there is anything wrong with our coffee beans before moving on to potential next steps and seeing if there is other factors coming into play with our drink quality. Those next steps could be contacting the Coffee Quality Institute to help find out more about the testing method they used to give cup points, surveying customers about their favorite drinks, least favorite drinks, and their reasoning behind their picks, and figuring out if our equipment may be affecting the drink quality rather than our ingredients. Having data collected from one or more of these potential steps may help give light on what our coffee needs in order for critics of our products to view us more favorably.
+
+  
+  
