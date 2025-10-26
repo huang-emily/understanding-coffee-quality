@@ -3,10 +3,14 @@ import pandas as pd
 coffee2025 = pd.read_csv('processed_data/arabica_data_cleaned.csv')
 coffee2023 = pd.read_csv('files_from_fatih/arabica_ratings_raw.csv')
 
+
 # convert problem columns using object type to float64 type (or some kind of numeric type)
 coffee2023['Total Cup Points'] = pd.to_numeric(coffee2023['Total Cup Points'], errors='coerce')
+coffee2023 = coffee2023[coffee2023['Total Cup Points'] != 0]
+
 coffee2023['Category One Defects'] = pd.to_numeric(coffee2023['Category One Defects'], errors='coerce')
 coffee2023['Category Two Defects'] = pd.to_numeric(coffee2023['Category Two Defects'], errors='coerce')
+
 
 # use this list of columns as the order every time
 common_columns = ['Country of Origin', 'Farm Name', 'Lot Number',
